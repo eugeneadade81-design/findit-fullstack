@@ -12,6 +12,7 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib import parse, request
 from urllib.parse import parse_qs, urlparse
 
 
@@ -637,6 +638,43 @@ class FindItStore:
 STORE = FindItStore(DB_PATH)
 
 
+class CloudinaryClient:
+    def __init__(self):
+        self.cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip()
+        self.api_key = os.environ.get("CLOUDINARY_API_KEY", "").strip()
+        self.api_secret = os.environ.get("CLOUDINARY_API_SECRET", "").strip()
+
+    @property
+    def enabled(self):
+        return bool(self.cloud_name and self.api_key and self.api_secret)
+
+    def upload_data_uri(self, data_uri: str):
+        if not self.enabled:
+            raise ValueError("Image upload is not configured yet.")
+        if not data_uri.startswith("data:image/"):
+            raise ValueError("Only image uploads are supported.")
+        timestamp = str(int(time.time()))
+        params_to_sign = f"timestamp={timestamp}{self.api_secret}"
+        signature = hashlib.sha1(params_to_sign.encode("utf-8")).hexdigest()
+        payload = parse.urlencode({
+            "file": data_uri,
+            "api_key": self.api_key,
+            "timestamp": timestamp,
+            "signature": signature,
+        }).encode("utf-8")
+        upload_url = f"https://api.cloudinary.com/v1_1/{self.cloud_name}/image/upload"
+        req = request.Request(upload_url, data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with request.urlopen(req, timeout=40) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        return {
+            "secureUrl": result.get("secure_url", ""),
+            "publicId": result.get("public_id", ""),
+        }
+
+
+CLOUDINARY = CloudinaryClient()
+
+
 class FindItHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -730,6 +768,12 @@ class FindItHandler(SimpleHTTPRequestHandler):
                 listing = STORE.create_listing(user["id"], payload)
                 listing["permissions"] = STORE.listing_permissions(listing, user)
                 self.respond_json({"listing": listing}, status=HTTPStatus.CREATED)
+                return
+            if path == "/api/upload-image" and method == "POST":
+                self.require_user()
+                payload = self.read_json()
+                uploaded = CLOUDINARY.upload_data_uri(payload.get("fileData", ""))
+                self.respond_json(uploaded, status=HTTPStatus.CREATED)
                 return
             if path.startswith("/api/listings/") and method == "GET":
                 listing_id = int(path.split("/")[-1])

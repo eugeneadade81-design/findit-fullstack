@@ -235,6 +235,20 @@ option { color: #061422; }
 .feedback.success { color: var(--success); }
 .feedback.error { color: var(--danger); }
 
+.upload-preview {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  overflow: hidden;
+  max-width: 280px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.upload-preview img {
+  width: 100%;
+  display: block;
+}
+
 .auth-dialog {
   border: none;
   padding: 0;

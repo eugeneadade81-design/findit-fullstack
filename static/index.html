@@ -135,9 +135,10 @@
           <label>Contact phone
             <input name="contactPhone" type="text" required placeholder="+233...">
           </label>
-          <label>Photo URL
-            <input name="photoUrl" type="url" placeholder="Optional for demo use">
+          <label>Item image
+            <input id="photo-file" name="photoFile" type="file" accept="image/*">
           </label>
+          <input name="photoUrl" type="hidden">
           <label class="full-span">Description
             <textarea name="description" rows="4" required placeholder="Include distinguishing marks, labels, or contents."></textarea>
           </label>
@@ -147,6 +148,7 @@
           </div>
         </form>
         <p id="report-feedback" class="feedback"></p>
+        <div id="upload-preview" class="upload-preview hidden"></div>
       </div>
     </section>
 

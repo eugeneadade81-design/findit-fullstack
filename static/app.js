@@ -25,6 +25,7 @@ function bindEvents() {
   qs("#report-form").addEventListener("submit", submitReport);
   qs("#claim-form").addEventListener("submit", submitClaim);
   qs("#cancel-edit").addEventListener("click", resetReportForm);
+  qs("#photo-file").addEventListener("change", previewUpload);
   qs("#search-input").addEventListener("input", renderListings);
   qs("#filter-type").addEventListener("change", renderListings);
   qs("#filter-status").addEventListener("change", renderListings);
@@ -196,6 +197,7 @@ async function openDetail(id) {
   qs("#detail-card").innerHTML = `
     <span class="listing-type">${capitalize(data.listing.type)}</span>
     <h3>${escapeHtml(data.listing.itemName)}</h3>
+    ${data.listing.photoUrl ? `<img class="detail-photo" src="${escapeHtml(data.listing.photoUrl)}" alt="${escapeHtml(data.listing.itemName)}">` : ""}
     <p>${escapeHtml(data.listing.description)}</p>
     <div class="tag-row">
       ${badge(data.listing.category)}
@@ -264,6 +266,13 @@ async function submitReport(event) {
     const payload = Object.fromEntries(form.entries());
     const listingId = payload.listingId;
     delete payload.listingId;
+    delete payload.photoFile;
+    const fileInput = qs("#photo-file");
+    if (fileInput.files && fileInput.files[0]) {
+      qs("#report-feedback").textContent = "Uploading image...";
+      qs("#report-feedback").className = "feedback";
+      payload.photoUrl = await uploadSelectedImage(fileInput.files[0]);
+    }
     const data = await api(listingId ? `/api/listings/${listingId}/update` : "/api/listings", {
       method: "POST",
       body: JSON.stringify(payload)
@@ -373,6 +382,7 @@ async function prefillEdit(id) {
     : "";
   form.photoUrl.value = data.listing.photoUrl || "";
   form.description.value = data.listing.description;
+  renderPreview(data.listing.photoUrl || "");
   qs("#cancel-edit").classList.remove("hidden");
   qs("#report").scrollIntoView({ behavior: "smooth" });
 }
@@ -382,7 +392,49 @@ function resetReportForm() {
   form.reset();
   form.listingId.value = "";
   form.listingDate.value = new Date().toISOString().slice(0, 10);
+  form.photoUrl.value = "";
+  renderPreview("");
   qs("#cancel-edit").classList.add("hidden");
+}
+
+function previewUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) {
+    renderPreview("");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => renderPreview(reader.result);
+  reader.readAsDataURL(file);
+}
+
+function renderPreview(src) {
+  const preview = qs("#upload-preview");
+  if (!src) {
+    preview.classList.add("hidden");
+    preview.innerHTML = "";
+    return;
+  }
+  preview.classList.remove("hidden");
+  preview.innerHTML = `<img src="${src}" alt="Selected upload preview">`;
+}
+
+async function uploadSelectedImage(file) {
+  const dataUrl = await fileToDataUrl(file);
+  const result = await api("/api/upload-image", {
+    method: "POST",
+    body: JSON.stringify({ fileData: dataUrl })
+  });
+  return result.secureUrl;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Could not read the selected image."));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function deleteListing(id) {

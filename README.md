@@ -53,6 +53,8 @@ The project is now deployment-ready with:
 - `Dockerfile`
 - `render.yaml`
 - environment-based host/port support
+- PostgreSQL support via `DATABASE_URL`
+- Cloudinary image upload support via env vars
 
 ### Quick option: Render
 
@@ -66,6 +68,13 @@ Important:
 - The app currently uses SQLite stored in `data/findit.db`
 - On many free hosts, local disk may be ephemeral
 - That means app data can reset after redeploy/restart unless you use persistent storage
+
+Production env vars:
+
+- `DATABASE_URL`
+- `CLOUDINARY_CLOUD_NAME`
+- `CLOUDINARY_API_KEY`
+- `CLOUDINARY_API_SECRET`
 
 For a school demo, this is usually fine.
 For real public use, the next production step should be moving from SQLite to a hosted database.

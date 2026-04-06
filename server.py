@@ -27,19 +27,87 @@ def now_iso():
 class FindItStore:
     def __init__(self, db_path: Path):
         self.db_path = db_path
+        self.database_url = os.environ.get("DATABASE_URL", "").strip()
+        self.backend = "postgres" if self.database_url.startswith("postgres") else "sqlite"
         self._init_db()
         self._seed()
 
     def connect(self):
+        if self.backend == "postgres":
+            from psycopg import connect
+            from psycopg.rows import dict_row
+            return connect(self.database_url, row_factory=dict_row)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _prepare_query(self, query: str) -> str:
+        if self.backend == "postgres":
+            return query.replace("?", "%s")
+        return query
+
+    def _execute(self, conn, query, params=()):
+        return conn.execute(self._prepare_query(query), params)
+
+    def _executescript(self, conn, script: str):
+        if self.backend == "sqlite":
+            conn.executescript(script)
+            return
+        for statement in script.split(";"):
+            statement = statement.strip()
+            if statement:
+                conn.execute(statement)
+
     def _init_db(self):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
-            conn.executescript(
+            if self.backend == "postgres":
+                script = """
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    full_name TEXT NOT NULL,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'student',
+                    faculty TEXT,
+                    phone TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS sessions (
+                    token TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS listings (
+                    id SERIAL PRIMARY KEY,
+                    type TEXT NOT NULL,
+                    item_name TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    location TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    photo_url TEXT,
+                    color TEXT,
+                    listing_date TEXT NOT NULL,
+                    contact_phone TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_by INTEGER NOT NULL REFERENCES users (id),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS claims (
+                    id SERIAL PRIMARY KEY,
+                    listing_id INTEGER NOT NULL REFERENCES listings (id) ON DELETE CASCADE,
+                    claimant_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+                    proof_text TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL
+                );
                 """
+            else:
+                script = """
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     full_name TEXT NOT NULL,
@@ -87,11 +155,12 @@ class FindItStore:
                     FOREIGN KEY (claimant_id) REFERENCES users (id) ON DELETE CASCADE
                 );
                 """
-            )
+            self._executescript(conn, script)
+            conn.commit()
 
     def _seed(self):
         with self.connect() as conn:
-            count = conn.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"]
+            count = self._execute(conn, "SELECT COUNT(*) AS count FROM users").fetchone()["count"]
             if count:
                 return
 
@@ -100,7 +169,8 @@ class FindItStore:
                 ("Ama Serwaa", "ama@knust.edu.gh", self.hash_password("student123"), "student", "Engineering", "+233200000002"),
                 ("Yaw Opoku", "yaw@knust.edu.gh", self.hash_password("student123"), "student", "Science", "+233200000003"),
             ]
-            conn.executemany(
+            self._execute_many(
+                conn,
                 "INSERT INTO users (full_name, email, password_hash, role, faculty, phone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [(n, e, p, r, f, ph, now_iso()) for n, e, p, r, f, ph in users],
             )
@@ -111,7 +181,8 @@ class FindItStore:
                 ("found", "Brown leather wallet", "Wallet", "Republic Hall shuttle stop", "Contains a red meal card and folded receipts.", "", "Brown", "2026-04-02", "+233240000333", "claimed", 2),
                 ("lost", "Silver key holder with 3 keys", "Keys", "Brunei hostel Block B", "Three keys on a silver ring with a football charm.", "", "Silver", "2026-04-01", "+233240000444", "resolved", 3),
             ]
-            conn.executemany(
+            self._execute_many(
+                conn,
                 """
                 INSERT INTO listings
                 (type, item_name, category, location, description, photo_url, color, listing_date, contact_phone, status, created_by, created_at, updated_at)
@@ -120,13 +191,30 @@ class FindItStore:
                 [(*row, now_iso(), now_iso()) for row in listings],
             )
 
-            conn.execute(
+            self._execute(
+                conn,
                 """
                 INSERT INTO claims (listing_id, claimant_id, proof_text, status, created_at)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (3, 3, "The wallet contains a red meal card and a Tech Junction receipt.", "approved", now_iso()),
             )
+            conn.commit()
+
+    def _execute_many(self, conn, query, rows):
+        prepared = self._prepare_query(query)
+        if self.backend == "postgres":
+            with conn.cursor() as cursor:
+                cursor.executemany(prepared, rows)
+        else:
+            conn.executemany(prepared, rows)
+
+    def _insert_and_get_id(self, conn, query, params):
+        if self.backend == "postgres":
+            cursor = self._execute(conn, query + " RETURNING id", params)
+            return cursor.fetchone()["id"]
+        cursor = self._execute(conn, query, params)
+        return cursor.lastrowid
 
     @staticmethod
     def hash_password(password: str) -> str:
@@ -134,10 +222,11 @@ class FindItStore:
 
     def create_user(self, payload):
         with self.connect() as conn:
-            existing = conn.execute("SELECT id FROM users WHERE email = ?", (payload["email"],)).fetchone()
+            existing = self._execute(conn, "SELECT id FROM users WHERE email = ?", (payload["email"],)).fetchone()
             if existing:
                 raise ValueError("An account with that email already exists.")
-            cursor = conn.execute(
+            user_id = self._insert_and_get_id(
+                conn,
                 """
                 INSERT INTO users (full_name, email, password_hash, role, faculty, phone, created_at)
                 VALUES (?, ?, ?, 'student', ?, ?, ?)
@@ -151,31 +240,34 @@ class FindItStore:
                     now_iso(),
                 ),
             )
-            return self.get_user(cursor.lastrowid)
+            conn.commit()
+            return self.get_user(user_id)
 
     def authenticate(self, email, password):
         with self.connect() as conn:
-            user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+            user = self._execute(conn, "SELECT * FROM users WHERE email = ?", (email,)).fetchone()
             if not user or user["password_hash"] != self.hash_password(password):
                 return None
             return dict(user)
 
     def get_user(self, user_id):
         with self.connect() as conn:
-            user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            user = self._execute(conn, "SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
             return dict(user) if user else None
 
     def create_session(self, user_id):
         token = secrets.token_hex(24)
         with self.connect() as conn:
-            conn.execute("INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)", (token, user_id, now_iso()))
+            self._execute(conn, "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)", (token, user_id, now_iso()))
+            conn.commit()
         return token
 
     def get_session_user(self, token):
         if not token:
             return None
         with self.connect() as conn:
-            row = conn.execute(
+            row = self._execute(
+                conn,
                 """
                 SELECT users.* FROM sessions
                 JOIN users ON users.id = sessions.user_id
@@ -187,7 +279,8 @@ class FindItStore:
 
     def delete_session(self, token):
         with self.connect() as conn:
-            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            self._execute(conn, "DELETE FROM sessions WHERE token = ?", (token,))
+            conn.commit()
 
     def serialize_user(self, user):
         if not user:
@@ -259,12 +352,13 @@ class FindItStore:
             params.append(f"%{filters['search']}%")
         query += " GROUP BY listings.id ORDER BY listings.id DESC"
         with self.connect() as conn:
-            rows = conn.execute(query, params).fetchall()
+            rows = self._execute(conn, query, params).fetchall()
             return [self.serialize_listing(dict(row)) for row in rows]
 
     def get_listing(self, listing_id):
         with self.connect() as conn:
-            row = conn.execute(
+            row = self._execute(
+                conn,
                 """
                 SELECT listings.*, COUNT(claims.id) AS claims_count
                 FROM listings LEFT JOIN claims ON claims.listing_id = listings.id
@@ -280,7 +374,8 @@ class FindItStore:
     def create_listing(self, user_id, payload):
         self.validate_listing_payload(payload)
         with self.connect() as conn:
-            cursor = conn.execute(
+            listing_id = self._insert_and_get_id(
+                conn,
                 """
                 INSERT INTO listings
                 (type, item_name, category, location, description, photo_url, color, listing_date, contact_phone, status, created_by, created_at, updated_at)
@@ -301,14 +396,14 @@ class FindItStore:
                     now_iso(),
                 ),
             )
-            listing_id = cursor.lastrowid
             conn.commit()
         return self.get_listing(listing_id)
 
     def update_listing(self, listing_id, payload):
         self.validate_listing_payload(payload)
         with self.connect() as conn:
-            conn.execute(
+            self._execute(
+                conn,
                 """
                 UPDATE listings
                 SET type = ?, item_name = ?, category = ?, location = ?, description = ?,
@@ -336,23 +431,26 @@ class FindItStore:
         if not proof_text or len(proof_text.strip()) < 12:
             raise ValueError("Proof text should be at least 12 characters long.")
         with self.connect() as conn:
-            exists = conn.execute(
+            exists = self._execute(
+                conn,
                 "SELECT id FROM claims WHERE listing_id = ? AND claimant_id = ? AND status IN ('pending', 'approved')",
                 (listing_id, user_id),
             ).fetchone()
             if exists:
                 raise ValueError("You already have an active claim on this listing.")
-            conn.execute(
+            self._execute(
+                conn,
                 "INSERT INTO claims (listing_id, claimant_id, proof_text, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
                 (listing_id, user_id, proof_text, now_iso()),
             )
-            conn.execute("UPDATE listings SET status = 'claimed', updated_at = ? WHERE id = ? AND status = 'open'", (now_iso(), listing_id))
+            self._execute(conn, "UPDATE listings SET status = 'claimed', updated_at = ? WHERE id = ? AND status = 'open'", (now_iso(), listing_id))
             conn.commit()
         return self.get_listing(listing_id)
 
     def get_claims_for_listing(self, listing_id):
         with self.connect() as conn:
-            rows = conn.execute(
+            rows = self._execute(
+                conn,
                 """
                 SELECT claims.*, users.full_name, users.email
                 FROM claims
@@ -377,7 +475,8 @@ class FindItStore:
 
     def list_claims_for_user(self, user_id):
         with self.connect() as conn:
-            rows = conn.execute(
+            rows = self._execute(
+                conn,
                 """
                 SELECT claims.*, listings.item_name, listings.category, listings.location, listings.status AS listing_status
                 FROM claims
@@ -404,7 +503,8 @@ class FindItStore:
 
     def list_listings_for_user(self, user_id):
         with self.connect() as conn:
-            rows = conn.execute(
+            rows = self._execute(
+                conn,
                 """
                 SELECT listings.*, COUNT(claims.id) AS claims_count
                 FROM listings LEFT JOIN claims ON claims.listing_id = listings.id
@@ -420,13 +520,13 @@ class FindItStore:
         if status not in {"approved", "rejected", "pending"}:
             raise ValueError("Invalid claim status.")
         with self.connect() as conn:
-            row = conn.execute("SELECT listing_id FROM claims WHERE id = ?", (claim_id,)).fetchone()
+            row = self._execute(conn, "SELECT listing_id FROM claims WHERE id = ?", (claim_id,)).fetchone()
             if not row:
                 raise ValueError("Claim not found.")
             listing_id = row["listing_id"]
-            conn.execute("UPDATE claims SET status = ? WHERE id = ?", (status, claim_id))
+            self._execute(conn, "UPDATE claims SET status = ? WHERE id = ?", (status, claim_id))
             if status == "approved":
-                conn.execute("UPDATE listings SET status = 'claimed', updated_at = ? WHERE id = ?", (now_iso(), listing_id))
+                self._execute(conn, "UPDATE listings SET status = 'claimed', updated_at = ? WHERE id = ?", (now_iso(), listing_id))
             conn.commit()
         return self.get_listing(listing_id)
 
@@ -434,24 +534,24 @@ class FindItStore:
         if status not in {"open", "claimed", "resolved"}:
             raise ValueError("Invalid listing status.")
         with self.connect() as conn:
-            conn.execute("UPDATE listings SET status = ?, updated_at = ? WHERE id = ?", (status, now_iso(), listing_id))
+            self._execute(conn, "UPDATE listings SET status = ?, updated_at = ? WHERE id = ?", (status, now_iso(), listing_id))
             conn.commit()
         return self.get_listing(listing_id)
 
     def delete_listing(self, listing_id):
         with self.connect() as conn:
-            conn.execute("DELETE FROM listings WHERE id = ?", (listing_id,))
+            self._execute(conn, "DELETE FROM listings WHERE id = ?", (listing_id,))
             conn.commit()
 
     def analytics(self):
         with self.connect() as conn:
-            total = conn.execute("SELECT COUNT(*) AS count FROM listings").fetchone()["count"]
-            resolved = conn.execute("SELECT COUNT(*) AS count FROM listings WHERE status = 'resolved'").fetchone()["count"]
-            open_count = conn.execute("SELECT COUNT(*) AS count FROM listings WHERE status = 'open'").fetchone()["count"]
-            claimed = conn.execute("SELECT COUNT(*) AS count FROM listings WHERE status = 'claimed'").fetchone()["count"]
-            by_category = conn.execute("SELECT category AS label, COUNT(*) AS count FROM listings GROUP BY category ORDER BY count DESC").fetchall()
-            by_location = conn.execute("SELECT location AS label, COUNT(*) AS count FROM listings GROUP BY location ORDER BY count DESC LIMIT 6").fetchall()
-            pending_claims = conn.execute("SELECT COUNT(*) AS count FROM claims WHERE status = 'pending'").fetchone()["count"]
+            total = self._execute(conn, "SELECT COUNT(*) AS count FROM listings").fetchone()["count"]
+            resolved = self._execute(conn, "SELECT COUNT(*) AS count FROM listings WHERE status = 'resolved'").fetchone()["count"]
+            open_count = self._execute(conn, "SELECT COUNT(*) AS count FROM listings WHERE status = 'open'").fetchone()["count"]
+            claimed = self._execute(conn, "SELECT COUNT(*) AS count FROM listings WHERE status = 'claimed'").fetchone()["count"]
+            by_category = self._execute(conn, "SELECT category AS label, COUNT(*) AS count FROM listings GROUP BY category ORDER BY count DESC").fetchall()
+            by_location = self._execute(conn, "SELECT location AS label, COUNT(*) AS count FROM listings GROUP BY location ORDER BY count DESC LIMIT 6").fetchall()
+            pending_claims = self._execute(conn, "SELECT COUNT(*) AS count FROM claims WHERE status = 'pending'").fetchone()["count"]
         recovery_rate = round((resolved / total) * 100, 1) if total else 0
         return {
             "totalReports": total,

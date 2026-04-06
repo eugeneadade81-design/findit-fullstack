@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: findit-app
+    runtime: docker
+    plan: free
+    autoDeploy: true

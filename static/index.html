@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a1727">
+  <title>FindIt | Campus Lost & Found</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+
+  <header class="topbar">
+    <div class="brand-wrap">
+      <p class="eyebrow">KNUST Lost & Found Platform</p>
+      <a class="brand" href="/">FindIt</a>
+    </div>
+    <nav class="top-actions">
+      <button id="install-app" class="chip ghost hidden" type="button">Install app</button>
+      <button id="open-auth" class="chip" type="button">Sign in</button>
+      <button id="logout-button" class="chip ghost hidden" type="button">Logout</button>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="panel hero-panel">
+        <p class="eyebrow">Campus Lost & Found Mobile App</p>
+        <h1>Report, match, claim, and recover items in one trusted student community.</h1>
+        <p class="lede">
+          FindIt is a full-stack PWA built for campus recovery workflows. Students can report lost or found items,
+          discover likely matches, submit ownership claims, and help campus security reduce manual workload.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#report">Report an item</a>
+          <a class="button secondary" href="#listings">Browse listings</a>
+        </div>
+        <div id="hero-metrics" class="metric-grid"></div>
+      </div>
+
+      <aside class="panel side-panel">
+        <div class="welcome-box">
+          <p class="eyebrow">Session</p>
+          <h2 id="session-title">Browse as a guest</h2>
+          <p id="session-copy">Create an account or sign in to report items, submit claims, and access your dashboard.</p>
+        </div>
+        <div class="account-card">
+          <h3>Demo accounts</h3>
+          <p><strong>Admin:</strong> `admin@knust.edu.gh` / `admin123`</p>
+          <p><strong>Student:</strong> `ama@knust.edu.gh` / `student123`</p>
+        </div>
+      </aside>
+    </section>
+
+    <section id="dashboard" class="section hidden">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Dashboard</p>
+          <h2>Your student activity</h2>
+        </div>
+      </div>
+      <div class="dashboard-grid">
+        <article class="panel">
+          <h3>Profile</h3>
+          <div id="profile-card" class="stack-list"></div>
+        </article>
+        <article class="panel">
+          <h3>Quick guide</h3>
+          <ul class="info-list">
+            <li>Post a detailed report as soon as you notice an item is missing.</li>
+            <li>Check the smart match suggestions on each listing detail page.</li>
+            <li>Use a strong ownership proof when submitting a claim.</li>
+          </ul>
+        </article>
+      </div>
+      <div class="dashboard-grid">
+        <article class="panel">
+          <h3>My reports</h3>
+          <div id="my-listings" class="stack-list"></div>
+        </article>
+        <article class="panel">
+          <h3>My claims</h3>
+          <div id="my-claims" class="stack-list"></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="report" class="section">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">New Report</p>
+          <h2>Submit a lost or found item.</h2>
+        </div>
+      </div>
+      <div class="panel">
+        <form id="report-form" class="form-grid">
+          <input type="hidden" name="listingId">
+          <label>Type
+            <select name="type" required>
+              <option value="lost">Lost</option>
+              <option value="found">Found</option>
+            </select>
+          </label>
+          <label>Item name
+            <input name="itemName" type="text" required placeholder="Student ID card, black wallet, phone">
+          </label>
+          <label>Category
+            <select name="category" required>
+              <option value="ID Card">ID Card</option>
+              <option value="Phone">Phone</option>
+              <option value="Wallet">Wallet</option>
+              <option value="Bag">Bag</option>
+              <option value="Keys">Keys</option>
+              <option value="Electronics">Electronics</option>
+              <option value="Documents">Documents</option>
+              <option value="Accessories">Accessories</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+          <label>Location
+            <input name="location" type="text" required placeholder="Library, Brunei, Engineering block">
+          </label>
+          <label>Date
+            <input name="listingDate" type="date" required>
+          </label>
+          <label>Color
+            <input name="color" type="text" placeholder="Blue, black, silver">
+          </label>
+          <label>Contact phone
+            <input name="contactPhone" type="text" required placeholder="+233...">
+          </label>
+          <label>Photo URL
+            <input name="photoUrl" type="url" placeholder="Optional for demo use">
+          </label>
+          <label class="full-span">Description
+            <textarea name="description" rows="4" required placeholder="Include distinguishing marks, labels, or contents."></textarea>
+          </label>
+          <div class="full-span form-actions">
+            <button class="button primary" type="submit">Submit report</button>
+            <button id="cancel-edit" class="button ghost hidden" type="button">Cancel edit</button>
+          </div>
+        </form>
+        <p id="report-feedback" class="feedback"></p>
+      </div>
+    </section>
+
+    <section id="listings" class="section">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Listings</p>
+          <h2>Search active lost and found reports.</h2>
+        </div>
+      </div>
+      <div class="toolbar panel">
+        <input id="search-input" type="search" placeholder="Search by item, location, description">
+        <select id="filter-type">
+          <option value="all">All types</option>
+          <option value="lost">Lost</option>
+          <option value="found">Found</option>
+        </select>
+        <select id="filter-status">
+          <option value="all">All statuses</option>
+          <option value="open">Open</option>
+          <option value="claimed">Claimed</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <select id="filter-category">
+          <option value="all">All categories</option>
+        </select>
+      </div>
+      <div class="content-grid">
+        <div id="listings-grid" class="listing-grid"></div>
+        <aside class="side-stack">
+          <article class="panel">
+            <h3>At a glance</h3>
+            <div id="summary-stats" class="stack-list"></div>
+          </article>
+        </aside>
+      </div>
+    </section>
+
+    <section id="detail-section" class="section hidden">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Detail View</p>
+          <h2>Listing detail, smart matches, and claim flow.</h2>
+        </div>
+      </div>
+      <div class="detail-grid">
+        <article class="panel">
+          <div id="detail-card"></div>
+          <div id="detail-owner-actions" class="hero-actions"></div>
+          <div class="subsection">
+            <h3>Smart match suggestions</h3>
+            <div id="matches-list" class="stack-list"></div>
+          </div>
+        </article>
+        <aside class="panel">
+          <div class="subsection">
+            <h3>Ownership claim</h3>
+            <form id="claim-form" class="form-grid single-column">
+              <input type="hidden" name="listingId">
+              <label>Proof of ownership
+                <textarea name="proofText" rows="6" required placeholder="Describe a unique mark, card number, lock pattern, or content that proves ownership."></textarea>
+              </label>
+              <div class="form-actions">
+                <button class="button primary" type="submit">Submit claim</button>
+              </div>
+            </form>
+            <p id="claim-feedback" class="feedback"></p>
+          </div>
+          <div class="subsection">
+            <h3>Claims on this listing</h3>
+            <div id="claims-list" class="stack-list"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="admin-section" class="section hidden">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Admin Console</p>
+          <h2>Moderation and analytics</h2>
+        </div>
+      </div>
+      <div id="admin-metrics" class="metric-grid"></div>
+      <div class="dashboard-grid">
+        <article class="panel">
+          <h3>Category breakdown</h3>
+          <div id="admin-categories" class="stack-list"></div>
+        </article>
+        <article class="panel">
+          <h3>Top locations</h3>
+          <div id="admin-locations" class="stack-list"></div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="auth-dialog" class="auth-dialog">
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h3>Account access</h3>
+        <button id="close-auth" class="chip ghost" type="button">Close</button>
+      </div>
+      <div class="auth-grid">
+        <form id="login-form" class="panel auth-panel">
+          <h4>Sign in</h4>
+          <label>Email
+            <input name="email" type="email" required>
+          </label>
+          <label>Password
+            <input name="password" type="password" required>
+          </label>
+          <button class="button primary" type="submit">Sign in</button>
+        </form>
+        <form id="register-form" class="panel auth-panel">
+          <h4>Create account</h4>
+          <label>Full name
+            <input name="full_name" type="text" required>
+          </label>
+          <label>KNUST email
+            <input name="email" type="email" required placeholder="name@knust.edu.gh">
+          </label>
+          <label>Password
+            <input name="password" type="password" required>
+          </label>
+          <label>Faculty
+            <input name="faculty" type="text" placeholder="Engineering, Science...">
+          </label>
+          <label>Phone
+            <input name="phone" type="text" placeholder="+233...">
+          </label>
+          <button class="button primary" type="submit">Create account</button>
+        </form>
+      </div>
+      <p id="auth-feedback" class="feedback"></p>
+    </div>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>
